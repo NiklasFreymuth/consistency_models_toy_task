@@ -14,6 +14,8 @@ setup(
         "scikit-learn",
         "tqdm",
         "matplotlib",
-        "numpy"
+        "numpy",
+        "omegaconf",
+        "wandb"
     ]
 )
