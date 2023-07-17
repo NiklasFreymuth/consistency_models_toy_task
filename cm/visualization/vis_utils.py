@@ -1,22 +1,10 @@
+import os
 
-import torch 
-import numpy as np
-from torch.distributions import Normal
-from cm.cm import ConsistencyModel
 import matplotlib.pyplot as plt
-from tqdm import tqdm
-from scipy.interpolate import interpn
-from scipy.ndimage import gaussian_filter
-from scipy.interpolate import interp1d, interp2d
-from matplotlib.colors import LogNorm, PowerNorm
+import numpy as np
+import torch
 from matplotlib.collections import LineCollection
 from scipy.stats import gaussian_kde, norm
-from matplotlib.animation import FuncAnimation
-from matplotlib.collections import LineCollection
-
-import torch
-from torch.distributions.normal import Normal
-from cm.cm import ConsistencyModel
 
 
 def get_test_samples(model, n_samples, sampling_method, n_sampling_steps):
@@ -33,26 +21,27 @@ def get_test_samples(model, n_samples, sampling_method, n_sampling_steps):
         test_samples (list): List of test samples obtained from the given model.
     """
     if sampling_method == 'multistep':
-        return model.sample_multistep(torch.zeros((n_samples, 1)), None, return_seq=True, n_sampling_steps=n_sampling_steps)
+        return model.sample_multistep(torch.zeros((n_samples, 1)), None, return_seq=True,
+                                      n_sampling_steps=n_sampling_steps)
     elif sampling_method == 'onestep':
         return model.sample_singlestep(torch.zeros((n_samples, 1)), None, return_seq=True)
     elif sampling_method == 'euler':
-        return model.sample_diffusion_euler(torch.zeros((n_samples, 1)), None, return_seq=True, n_sampling_steps=n_sampling_steps)
+        return model.sample_diffusion_euler(torch.zeros((n_samples, 1)), None, return_seq=True,
+                                            n_sampling_steps=n_sampling_steps)
     else:
         raise ValueError('sampling_method must be either multistep, onestep or euler')
 
 
-
 def plot_main_figure(
-    fn, 
-    model, 
-    n_samples, 
-    train_epochs, 
-    sampling_method='euler',
-    x_range=[-4, 4], 
-    n_sampling_steps = 10,
-    save_path='/home/moritz/code/cm_1D_Toy_Task/plots'
-):  
+        fn,
+        model,
+        n_samples,
+        train_epochs,
+        sampling_method='euler',
+        x_range=[-4, 4],
+        n_sampling_steps=10,
+        save_path='/home/moritz/code/cm_1D_Toy_Task/plots'
+):
     """
     Plot the main figure for the given model and sampling method.
     Args:
@@ -90,7 +79,8 @@ def plot_main_figure(
     # Create a LineCollection to show colors on the predicted distribution line
     points = np.array([x_test, predicted_distribution]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
-    lc = LineCollection(segments, cmap='viridis', norm=plt.Normalize(predicted_distribution.min(), predicted_distribution.max()))
+    lc = LineCollection(segments, cmap='viridis',
+                        norm=plt.Normalize(predicted_distribution.min(), predicted_distribution.max()))
     lc.set_array(predicted_distribution)
     lc.set_linewidth(2)
 
@@ -102,25 +92,25 @@ def plot_main_figure(
         n_sampling_steps = 1
         stepsize = np.linspace(0, 1, 2)
         ax2.quiver(test_samples[:, 0].reshape(-1),
-                    stepsize[0] * np.ones(n_samples),
-                    test_samples[:, 1].reshape(-1) - test_samples[:, 0].reshape(-1),
-                    stepsize[1] * np.ones(n_samples) - stepsize[0] * np.ones(n_samples),
-                    angles='xy', scale_units='xy', scale=1,
-                    width=0.001
-                    )
+                   stepsize[0] * np.ones(n_samples),
+                   test_samples[:, 1].reshape(-1) - test_samples[:, 0].reshape(-1),
+                   stepsize[1] * np.ones(n_samples) - stepsize[0] * np.ones(n_samples),
+                   angles='xy', scale_units='xy', scale=1,
+                   width=0.001
+                   )
     else:
         n_sampling_steps = model.n_sampling_steps
         for i in range(1, n_sampling_steps):
             ax2.quiver(test_samples[:, i - 1].reshape(-1),
-                    stepsize[i - 1] * np.ones(n_samples),
-                    test_samples[:, i].reshape(-1) - test_samples[:, i-1].reshape(-1),
-                    stepsize[i] * np.ones(n_samples) - stepsize[i - 1] * np.ones(n_samples),
-                    angles='xy', scale_units='xy', scale=1,
-                    width=0.001
-                    )
+                       stepsize[i - 1] * np.ones(n_samples),
+                       test_samples[:, i].reshape(-1) - test_samples[:, i - 1].reshape(-1),
+                       stepsize[i] * np.ones(n_samples) - stepsize[i - 1] * np.ones(n_samples),
+                       angles='xy', scale_units='xy', scale=1,
+                       width=0.001
+                       )
     ax2.set_yticks([stepsize.min(), stepsize.max()])
     ax2.set_ylim(stepsize.min(), stepsize.max())
-    
+
     mu = 0  # mean
     sigma = model.sigma_max  # standard deviation
 
@@ -143,9 +133,11 @@ def plot_main_figure(
     ax3.set_yticks([])
     ax2.set_yticklabels(['T', '0'])
     ax2.tick_params(axis='y', labelsize=16)
-    # ax2.set_yticks('log')
     plt.subplots_adjust(hspace=0)
-    plt.savefig(save_path + '/cm_' + sampling_method + f'_epochs_{train_epochs}.png', bbox_inches='tight', pad_inches=0.1)    
-    
+    # ax2.set_yticks('log')
+
+    path = save_path + '/main_figure_' + sampling_method + f'_epochs_{train_epochs}.png'
+    os.makedirs(save_path, exist_ok=True)
+    plt.savefig(path, bbox_inches='tight', pad_inches=0.1)
+
     print('Plot saved!')
-    
