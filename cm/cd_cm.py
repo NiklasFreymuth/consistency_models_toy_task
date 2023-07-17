@@ -42,6 +42,7 @@ def ema_diffusion_eval_wrapper(func):
         result = func(self, *args, **kwargs)
         
         # Swap the parameters back to the original model
+        # todo this is super slow, right? Why not pass the model directly?
         self.diffusion_model.load_state_dict(model_state_dict)
         return result
     return wrapper
@@ -336,6 +337,7 @@ class CDConsistencyModel(nn.Module):
         self.optimizer.step()
         # first we update the ema weights of self.model
         self._update_ema_weights()
+        # todo why are there 2 kinds of ema here?
 
         # next update the target model
         # compute the ema rate for the target model update 
@@ -441,6 +443,43 @@ class CDConsistencyModel(nn.Module):
             return diffusion_loss, cd_loss
         else:
             return 0, cd_loss
+
+    def consistency_eval_step(self, x, cond, train_step, max_steps):
+        """
+        Contains all update steps for the diffusion model and the
+        consistency policy.
+        """
+        self.model.train(False)
+        # next update the consistency policy using the diffusion model
+
+        x = x.to(self.device)
+        cond = cond.to(self.device)
+
+        with torch.no_grad():
+            # next generate the discrete timesteps
+            t_steps = self.compute_discrete_timesteps(train_step, max_steps)
+            t = torch.tensor([self.sample_discrete_timesteps(i, t_steps) for i in range(t_steps)]).to(self.device)
+
+            t_idx = torch.randint(0, t_steps - 1, (x.shape[0], 1), device=self.device)
+            # define the two discrete timesteps for the consistency loss
+            t1 = t[t_idx]
+
+            # see how well the model works when having to go back to 0 from 2 different steps
+
+            t2 = torch.zeros(t1.shape, device=self.device)
+
+            # compute the loss
+            noise = torch.randn_like(x)  # todo doesn't this need some kind of noise schedule?
+            x_1 = x + noise * t1
+            x_1_denoised = self.consistency_wrapper(self.model, x_1, cond, t1)  # consistency prediction of x1
+
+            # compute the loss for the second timestep
+            # with the ground truth action to compute the gradient
+            # x_2 = self.heun_update_step(x_1, t1, t2)  # diffusion model prediction of x2
+            x_2_denoised = self.consistency_wrapper(self.target_model, x, cond, t2)  # consistency prediction of x2
+
+            loss = torch.nn.functional.mse_loss(x_1_denoised, x_2_denoised).mean()
+        return loss.item()
         
     def diffusion_train_step(self, x, cond, train_step, max_steps):
         """
@@ -468,13 +507,14 @@ class CDConsistencyModel(nn.Module):
             t_chosen = t[t_idx]
         else:
             t_chosen = self.make_sample_density()(shape=(len(x),), device=self.device)
-                
-        self.diffusion_optimizer.zero_grad()
+
         loss = self.diffusion_loss(x, cond, t_chosen)
+        self.diffusion_optimizer.zero_grad()
         loss.backward()
         self.diffusion_optimizer.step()
-        # first we update the ema weights of self.model
-        self._update_diffusion_ema_weights()
+
+        # update the ema weights of self.model
+        self._update_diffusion_ema_weights()  # todo why is the ema over the diffusion parameters needed here?
         return loss.item()
 
     def _update_ema_weights(self):
@@ -525,7 +565,7 @@ class CDConsistencyModel(nn.Module):
         t = [self.sample_discrete_timesteps(i) for i in range(self.t_steps)]
         # compute the loss
         x_T = torch.randn_like(x) * self.sigma_max
-        pred_x = self. sample(x_T, cond, t)
+        pred_x = self.sample(x_T, cond, t)
         loss = torch.nn.functional.mse_loss(pred_x, x)
         return loss
     
@@ -660,7 +700,6 @@ class CDConsistencyModel(nn.Module):
         if cond is not None:
             cond = cond.to(self.device)
         x = torch.randn_like(x_shape).to(self.device) * self.sigma_max * 1.5
-        # x = torch.linspace(-4, 4, len(x_shape)).view(len(x_shape), 1).to(self.device)
 
         sampled_x = []
         if n_sampling_steps is None:
